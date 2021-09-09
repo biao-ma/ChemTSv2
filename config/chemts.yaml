@@ -1,0 +1,17 @@
+n_trees : 1
+reward_func_module: reward_logp 
+reward_func: evaluate_score
+c_val: 0.2
+count_of_reduction_ucb1: 2
+time_max: 60
+loop_max: 10000000
+cnt_max : 1000000
+playout_count: 1
+use_gpu: 1
+seed: [1] 
+models: 
+  - 
+    - name: zinc250k
+      json: zinc250k.json
+      weight: zinc250k.h5
+
