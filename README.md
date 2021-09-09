@@ -1,3 +1,8 @@
+## How to run ChemTS
+```bash
+run_chemts.sh
+```
+<!-- 
 # ChemTS_dev
 
 ## Requirements
@@ -86,3 +91,4 @@ If you want to use your own reward function, follow the instructions below.
 ## License
 
 This package is distributed under the MIT License.
+-->
