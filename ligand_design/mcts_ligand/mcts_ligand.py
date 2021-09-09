@@ -22,8 +22,8 @@ from util import StatFile
 
 INVALID_SCORE = -1024
 INVALID_REWARD = -1024
-MODEL_PATH = '/work/chemts/RNN-model'
-# MODEL_PATH = '/chemts/RNN-model'
+MODEL_PATH = os.path.join(os.path.dirname(__file__), '../../RNN-model')
+#MODEL_PATH = '/work/isp-daiia/ChemTS_dev/RNN-model'
 
 class Node:
     def __init__(self,

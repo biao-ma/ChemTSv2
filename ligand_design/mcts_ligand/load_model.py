@@ -22,7 +22,8 @@ from keras.models import model_from_json
 import  os
 # from make_smile import zinc_data_with_bracket, zinc_processed_with_bracket
 
-MODEL_PATH = '/chemts/RNN-model'
+MODEL_PATH = os.path.join(os.path.dirname(__file__), '../../RNN-model')
+
 
 def prepare_data(smiles,all_smile):
     all_smile_index=[]
