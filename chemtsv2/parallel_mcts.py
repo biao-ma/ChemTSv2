@@ -47,6 +47,7 @@ class JobType(Enum):
     CHECKPOINT_READY = 151
     CHECKPOINT_SAVE = 152
     CHECKPOINT_LOAD = 153
+    CHECKPOINT_RESET = 154
     GATHER_RESULTS = 253
     TIMEUP = 254
     FINISH = 255
@@ -191,6 +192,7 @@ class p_mcts:
         self.conf = conf
         self.logger = logger
         self.threshold = 3600 * conf["hours"]
+        self.next_checkpoint_time = conf["checkpoint_interval_hour"] * 3600
         self.root_position = ["&"] if root_position is None else root_position
         random.seed(conf["zobrist_hash_seed"])
         self.tokens = tokens
@@ -361,21 +363,21 @@ class p_mcts:
                 )
 
     def flush(self):
-        df = pd.DataFrame({
-            "generated_id": self.generated_id_list,
-            "smiles": self.valid_smiles_list,
-            "reward": self.reward_values_list,
-            "depth": self.depth_list,
-            "elapsed_time": self.elapsed_time_list,
-            "is_through_filter": self.filter_check_list,
-        })
-        df_obj = pd.DataFrame(self.objective_values_list, columns=self.obj_column_names)
-        df = pd.concat([df, df_obj], axis=1)
-        if os.path.exists(self.output_path):
-            df.to_csv(self.output_path, mode="a", index=False, header=False)
-        else:
-            df.to_csv(self.output_path, mode="w", index=False)
         if self.rank == 0:
+            df = pd.DataFrame({
+                "generated_id": self.generated_id_list,
+                "smiles": self.valid_smiles_list,
+                "reward": self.reward_values_list,
+                "depth": self.depth_list,
+                "elapsed_time": self.elapsed_time_list,
+                "is_through_filter": self.filter_check_list,
+            })
+            df_obj = pd.DataFrame(self.objective_values_list, columns=self.obj_column_names)
+            df = pd.concat([df, df_obj], axis=1)
+            if os.path.exists(self.output_path):
+                df.to_csv(self.output_path, mode="a", index=False, header=False)
+            else:
+                df.to_csv(self.output_path, mode="w", index=False)
             self.logger.info(f"Save a result at {self.output_path}")
 
         self.generated_id_list.clear()
@@ -431,15 +433,37 @@ class p_mcts:
                     checkpoint_ready_count = 0
                     # print('Checkpoint prepare')
                     for dest in range(1, self.nprocs):
-                        dummy_data = tag = JobType.CHECKPOINT_PREPARE.value
+                        dummy_data = JobType.CHECKPOINT_PREPARE.value
                         self.comm.bsend(dummy_data, dest=dest, tag=JobType.CHECKPOINT_PREPARE.value)
                 if self.elapsed_time() > self.threshold and (
                     not self.conf["save_checkpoint"] or checkpoint_saved
                 ):
                     timeup = True
                     for dest in range(1, self.nprocs):
-                        dummy_data = tag = JobType.TIMEUP.value
+                        dummy_data = JobType.TIMEUP.value
                         self.comm.bsend(dummy_data, dest=dest, tag=JobType.TIMEUP.value)
+                else:
+                    if checkpoint_saved:
+                        checkpoint_prepare = False
+                        checkpoint_saved = False
+                        checkpoint_ready_count = 0
+                        self.next_checkpoint_time += self.conf["checkpoint_interval_hour"] * 3600
+                        for dest in range(1, self.nprocs):
+                            dummy_data = JobType.CHECKPOINT_RESET.value
+                            self.comm.bsend(dummy_data, dest=dest, tag=JobType.CHECKPOINT_RESET.value)
+                        self.gather_results()
+                        self.flush()
+
+                # Flush results and checkpoint every checkpoint_interval_hour
+                if (self.elapsed_time() > self.next_checkpoint_time
+                    and self.conf["save_checkpoint"]
+                    and not checkpoint_prepare
+                ):
+                    checkpoint_prepare = True
+                    checkpoint_ready_count = 0
+                    for dest in range(1, self.nprocs):
+                        dummy_data = JobType.CHECKPOINT_PREPARE.value
+                        self.comm.bsend(dummy_data, dest=dest, tag=JobType.CHECKPOINT_PREPARE.value)
 
             while True:
                 ret = self.comm.Iprobe(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
@@ -632,7 +656,6 @@ class p_mcts:
                     timeup = True
                 elif tag == JobType.CHECKPOINT_PREPARE.value:
                     checkpoint_prepare = True
-                    # print('Checkpoint prepare', self.rank)
                     dummy_data = JobType.CHECKPOINT_READY.value
                     self.comm.bsend(dummy_data, dest=0, tag=JobType.CHECKPOINT_READY.value)
                 elif tag == JobType.CHECKPOINT_READY.value:
@@ -642,7 +665,7 @@ class p_mcts:
                     if checkpoint_ready_count >= self.nprocs - 1:
                         # print('Checkpoint ready count', checkpoint_ready_count)
                         for dest in range(0, self.nprocs):
-                            dummy_data = tag = JobType.CHECKPOINT_SAVE.value
+                            dummy_data = JobType.CHECKPOINT_SAVE.value
                             self.comm.bsend(
                                 dummy_data, dest=dest, tag=JobType.CHECKPOINT_SAVE.value
                             )
@@ -656,7 +679,6 @@ class p_mcts:
                         "start_time": self.start_time,
                         "jobq": jobq,
                     }
-                    # print('Checkpoint save start')
                     for i in range(self.nprocs):
                         if self.rank == i:
                             self.comm.barrier()
@@ -664,9 +686,18 @@ class p_mcts:
                                 self.conf["output_dir"],
                                 f"mp_checkpoint_rank{i:04}.pickle",
                             )
+                            if os.path.exists(ckpt_path):
+                                stem, ext = ckpt_path.rsplit(".", 1)
+                                os.rename(ckpt_path, stem + "_01." + ext)
                             with open(ckpt_path, mode="wb") as f:
                                 pickle.dump(cp_obj, f)
-                    # print('Checkpoint save finished')
                     checkpoint_saved = True
+                elif tag == JobType.CHECKPOINT_RESET.value:
+                    self.gather_results()
+                    self.flush()
+                    checkpoint_prepare = False
+                    checkpoint_saved = False
+                    checkpoint_ready_count = 0
+                    self.next_checkpoint_time += self.conf["checkpoint_interval_hour"] * 3600
 
         return

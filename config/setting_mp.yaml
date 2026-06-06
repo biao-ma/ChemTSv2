@@ -2,7 +2,7 @@
 c_val: 0.1
 # threshold_type: [time, generation_num]
 #threshold_type: generation_num
-hours: 0.02
+hours: 0.04
 #generation_num: 300
 output_dir: result/example_mp01
 model_setting:
@@ -24,6 +24,7 @@ reward_setting:
 # Restart setting
 save_checkpoint: False
 checkpoint_load: False
+checkpoint_interval_hour: 0.01
 
 # Filter setting
 use_lipinski_filter: False
