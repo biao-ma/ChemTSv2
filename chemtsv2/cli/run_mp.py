@@ -161,6 +161,9 @@ def set_default_config(conf):
         },
     )
     conf.setdefault("use_selfies", False)
+    conf.setdefault("save_checkpoint", False)
+    conf.setdefault("checkpoint_load", False)
+    conf.setdefault("checkpoint_interval_hour", 1.0)
 
 
 def get_filter_modules(conf):
